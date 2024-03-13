@@ -1,0 +1,14 @@
+{
+    "namespace": "kafka_event_processor",
+    "type": "record",
+    "name": "RateIssuedV2",
+    "fields": [
+        {"name": "model", "type": "string"},
+        {"name": "userId", "type": "int"},
+        {"name": "itemId", "type": "int"},
+        {"name": "price", "type": "int"},
+        {"name": "upperBound", "type": "int"},
+        {"name": "lowerBound", "type": "int"}
+    ]
+}
+

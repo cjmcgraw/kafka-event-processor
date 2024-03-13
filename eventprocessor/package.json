@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "dev": "ts-node-dev --inspect=0.0.0.0:9229 -- src/main.ts"
+  },
+  "dependencies": {
+    "@kafkajs/confluent-schema-registry": "^3.3.0",
+    "env-var": "^7.4.1",
+    "kafkajs": "^2.2.4",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.4.2"
+  }
+}
