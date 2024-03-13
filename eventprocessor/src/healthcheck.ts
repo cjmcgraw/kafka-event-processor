@@ -43,22 +43,59 @@ let lastEventProcessed = new Map<number, {offset: number, time: number}>();
 
 
 const fillOffsets = async () => kafkaAdmin
-    .fetchOffsets({groupId, topics: [topic], resolveOffsets: false})
-    .then(([{partitions}]) => {
-        for (const {partition, offset} of partitions) {
-            const val = parseInt(offset);
-            console.assert(val, "offset parsed in error potentially. Occurs when no events have been sent or seen by kafka!");
+    .fetchTopicOffsets(topic)
+    .then(async topicOffsets => {
+        await new Promise(r => setTimeout(r, 5_000));
+        for (const {partition, high} of topicOffsets) {
+            const maxOffset = parseInt(high);
+            if (maxOffset >= 0) {
+                lastKnownMaximumOffset.set(partition, maxOffset);
+            }
+        }
 
-            if (!lastKnownMaximumOffset.has(partition)) {
-                console.log(`Found new partition=${partition} offset=${val}`);
-                lastEventProcessed.set(partition, {offset: -1, time: MUST_RECEIVE_EVENT_BY_TIME});
+        const missingOffsets = Array.from(lastKnownMaximumOffset.keys())
+            .filter(partition => !lastEventProcessed.has(partition));
+
+        if (missingOffsets?.length > 0) {
+            console.log("found missing offsets. This is most likely first time start up.")
+            console.log("current lastKnownMaximumOffsets")
+            console.table(lastKnownMaximumOffset);
+            let newLastEventOffsets = await Promise.any([
+                kafkaAdmin.fetchOffsets({groupId, topics: [topic], resolveOffsets: true}),
+                kafkaAdmin.fetchOffsets({groupId, topics: [topic]})
+            ]).then(async groupOffsets => {
+                const [{partitions}] = groupOffsets.filter(({topic: t}) => t === topic);
+                return partitions.reduce(
+                    (acc, {partition, offset}) => {
+                        const i = parseInt(offset);
+                        if (Number.isFinite(i) && i > -1) {
+                            acc.set(partition, i);
+                        }
+                        return acc
+                    }, new Map<number, number>());
+                }
+            );
+
+            for (const partition of missingOffsets) {
+                if (!lastEventProcessed.has(partition)) {
+                    lastEventProcessed.set(partition, {
+                        offset: newLastEventOffsets.get(partition) ?? -1,
+                        time: newLastEventOffsets.has(partition)
+                            ? Date.now()
+                            : MUST_RECEIVE_EVENT_BY_TIME
+                    });
+                }
             }
 
-            lastKnownMaximumOffset.set(partition, val);
+            console.log("loaded event times from group offsets!");
+            console.log("lastEventsProcessed");
+            console.table(lastEventProcessed);
         }
-        console.log(`tracking partitions: ${partitions.length}`);
+
     })
-    .catch(console.error);
+    .catch(err => {
+        console.error(err);
+    });
 
 timers.setImmediate(fillOffsets);
 const backgroundTaskId = timers.setInterval(fillOffsets, EVENT_MIN_WAIT);
@@ -84,8 +121,8 @@ const server = net.createServer(socket => {
     const now = Date.now();
     let isHealthy = Boolean(
         healthy &&
-        lastKnownMaximumOffset.size > 0
-
+        lastKnownMaximumOffset.size > 0 &&
+        lastEventProcessed.size > 0
     )
 
     if (isHealthy) {
@@ -105,14 +142,12 @@ const server = net.createServer(socket => {
             // at this point it will have been a few minutes since partition lag increased
             if (maxOffset > 0 && (now - time) > EVENT_MIN_WAIT) {
                 // if the offset has any lag we are going to fail the healthcheck
-                const lag = maxOffset - offset + 1;
+                const lag = maxOffset - offset - 1;
                 console.assert(lag < 1, `partition=${partition} waited=${Math.round((now - time)/1000)}s lag=${lag}`);
                 isHealthy = Boolean(
                     isHealthy &&
                     lag < 1
                 )
-
-
             }
         }
     }

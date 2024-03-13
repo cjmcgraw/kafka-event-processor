@@ -17,9 +17,10 @@ kafka.consumer()
             await consumer.subscribe({topic: topic, fromBeginning: true})
             await consumer.run({
                 eachMessage: async ({ partition, message: {offset, value: buf} }) => {
-                    await new Promise(r => timers.setTimeout(r, 10_000));
-
                     const log = (...m) => console.log(...m.map(s => `topic=${topic} partition=${partition} ${s}`));
+
+
+                    await new Promise(r => timers.setTimeout(r, 10_000));
 
                     log('begin processing avro serialized event');
                     const value = await kafka.registry.decode(buf);

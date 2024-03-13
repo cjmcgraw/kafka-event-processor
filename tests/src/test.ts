@@ -1,4 +1,4 @@
-import { Kafka, Producer } from "kafkajs";
+import { Kafka } from "kafkajs";
 import { describe, test, beforeAll } from "@jest/globals";
 import {readFile} from "fs/promises";
 import { generateEvent } from "./utils";
@@ -49,10 +49,9 @@ describe("test that it works", () => {
             }));
 
         const messages = await Promise.all(
-            events.map(
-                async({key, value}) => ({
-                    key,
-                    value: await registry.encode(id, value),
+            events.map(async({key, value}) => ({
+                key,
+                value: await registry.encode(id, value),
             }))
         );
 
